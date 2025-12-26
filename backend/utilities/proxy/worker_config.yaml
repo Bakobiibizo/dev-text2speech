@@ -1,0 +1,20 @@
+
+worker_config: 
+    model: "ollama/mistral"
+    alias: "mistral"
+    api_base: "the-roost-agentartificial.ngrok.app"
+    api_version: /v1
+    debug: False
+    detailed_debug: False
+    temperature: 0.1
+    max_tokens: 32000
+    request_timeout: 600
+    max_budget: 10000
+    telemetry: False
+    drop_params: True
+    add_function_to_prompt: True
+    headers: None
+    save: False
+    use_queue: True
+    config: None
+    

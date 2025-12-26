@@ -1,0 +1,55 @@
+model_list:
+  - model_name: ollama/mistral:instruct
+    litellm_params:
+      model: ollama/mistral:instruct
+      api_base: http://100.96.149.57:7091
+      api_key: sk-1234
+  - model_name: ollama/mixtral:instruct
+    litellm_params:
+      model: ollama/mixtral:instruct
+      api_base: http://100.96.149.57:11431
+      api_key: sk-1234
+  - model_name: ollama/codellama2:python
+    litellm_params:
+      model: ollama/codellama2:python
+      api_base: http://100.96.149.57:11432
+      api_key: sk-1234
+  - model_name: ollama/llava
+    litellm_params:
+      model: ollama/llava
+      api_base: http://100.96.149.57:11432
+      api_key: sk-1234
+  - model_name: ollama/bakllava
+    litellm_params:
+      model: ollama/bakllava
+      api_base: http://100.96.149.57:11432
+  - model_name: ollama/dolphin-mistral
+    litellm_params:
+      model: ollama/dolphin-mistral
+      api_key: sk-1234
+      api_base: http://100.96.149.57:11433
+  - model_name: ollama/dolphin-mixtral:embed
+    litellm_params:
+      model: ollama/gemma:7b
+      api_key: sk-1234
+      api_base: http://100.96.149.57:11433
+litellm_settings:
+  drop_params: True
+  set_verbose: True
+  budget_durration: 365d
+  max_budget: 10000
+  max_tokens: 32000
+  temperature: 0.1
+  request_timeout: 600
+
+  
+  
+  
+
+  
+
+general_settings: 
+ master_key: Inf3r3nc3ForThePeople # [OPTIONAL] Only use this if you to require all calls to contain this key (Authorization: Bearer sk-1234)
+  # [OPTIONAL] use for token-based auth to proxy database_url
+environment:
+  DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@100.96.149.57:$POSTGRES_PORT/litellm
