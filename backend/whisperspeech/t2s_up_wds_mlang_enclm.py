@@ -354,6 +354,8 @@ class TSARTransformer(nn.Module):
     @classmethod
     def load_model(cls, ref="collabora/whisperspeech:t2s-small-en+pl.model",
                    repo_id=None, filename=None, local_filename=None, spec=None, device=None):
+        if device is None:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
         if repo_id is None and filename is None and local_filename is None and spec is None:
             if ":" in ref:
                 repo_id, filename = ref.split(":", 1)
@@ -362,7 +364,8 @@ class TSARTransformer(nn.Module):
         if not local_filename and spec is None:
             local_filename = hf_hub_download(repo_id=repo_id, filename=filename)
         if spec is None:
-            spec = torch.load(local_filename, map_location='cuda')
+            map_loc = device if torch.cuda.is_available() else 'cpu'
+            spec = torch.load(local_filename, map_location=map_loc)
         model = cls(**spec['config'], tunables=Tunables(**Tunables.upgrade(spec['tunables'])))
         model.load_state_dict(spec['state_dict'])
         model.eval().to(device)
@@ -370,7 +373,8 @@ class TSARTransformer(nn.Module):
 
     def load_checkpoint(self, local_filename_or_obj):
         if isinstance(local_filename_or_obj, (str, Path)):
-            spec = torch.load(local_filename, map_location='cuda')
+            map_loc = 'cuda' if torch.cuda.is_available() else 'cpu'
+            spec = torch.load(local_filename, map_location=map_loc)
         else:
             spec = local_filename_or_obj
         assert 'pytorch-lightning_version' in spec, 'not a valid PyTorch Lightning checkpoint'

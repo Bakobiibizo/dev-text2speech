@@ -28,8 +28,9 @@ COPY backend/ /app/backend/
 
 # Install Python dependencies
 RUN python3 -m pip install --no-cache-dir \
-    fastapi uvicorn pydantic torch torchaudio whisperspeech webdataset
+    fastapi uvicorn pydantic torch torchaudio whisperspeech webdataset fastcore fastprogress
 
+RUN python3 -m pip install --no-cache-dir vocos encodec --no-deps
 # Environment defaults
 # Proxy listens on 7101, backend on internal port 8101
 ENV API_HOST=0.0.0.0

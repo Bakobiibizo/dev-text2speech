@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  build-essential pkg-config \
  cmake ninja-build \
  python3.12-venv python3.12-dev \
+ ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
@@ -16,6 +17,28 @@ RUN pip install --no-cache-dir uv
 RUN pip uninstall -y pynvml || true \
 && pip install --no-cache-dir nvidia-ml-py
 
+# Backend Python deps (FastAPI + WhisperSpeech stack)
+RUN pip install --no-cache-dir \
+    fastapi uvicorn loguru pydub soundfile \
+    webdataset fastcore fastprogress \
+    starlette python-dotenv annotated-types annotated-doc typing_extensions \
+    transformers==4.40.2 sentencepiece accelerate
+
+RUN pip install --no-cache-dir --no-deps vocos encodec
+
+# Torch audio/vision built against base torch (CUDA-enabled in nvcr image)
+RUN pip uninstall -y torchaudio torchvision || true \
+    && pip install --no-cache-dir --no-deps --upgrade setuptools wheel \
+    && pip install --no-cache-dir --no-deps --no-build-isolation "git+https://github.com/pytorch/audio@release/2.9" \
+    && pip install --no-cache-dir --no-deps --no-build-isolation "git+https://github.com/pytorch/vision@v0.24.0" \
+    && python - <<'PY'
+import torch, torchaudio, torchvision
+print('torch', torch.__version__, 'cuda', torch.version.cuda, torch.cuda.is_available())
+print('torchaudio', torchaudio.__version__)
+print('torchvision', torchvision.__version__)
+PY
+
+# Rust toolchain for building proxy
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
@@ -26,13 +49,6 @@ RUN mkdir -p ${RUSTUP_HOME} ${CARGO_HOME} \
     && ${CARGO_HOME}/bin/rustup default stable \
     && chown -R ${UID}:${GID} ${RUSTUP_HOME} ${CARGO_HOME} \
     && ${CARGO_HOME}/bin/cargo --version
-
-RUN pip install --no-cache-dir --no-deps --upgrade setuptools wheel \
-&& pip install --no-cache-dir --no-deps --no-build-isolation "git+https://github.com/pytorch/audio@release/2.9" \
-&& python -c "import torchvision; print(torchvision.__version__)" || pip install --no-cache-dir --no-deps --no-build-isolation "git+https://github.com/pytorch/vision@release/2.9" \
-&& python -c "import torch; print(torch.__version__, torch.version.cuda)" \
-&& python -c "import torchaudio; print(torchaudio.__version__)" \
-&& python -c "import torchvision; print(torchvision.__version__)"
 
 RUN groupadd -g ${GID} dev || true \
 && useradd -m -u ${UID} -g ${GID} -s /bin/bash dev || true \

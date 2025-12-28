@@ -25,16 +25,23 @@ impl BackendConfig {
     pub fn from_env(default_port: u16) -> Self {
         use std::env;
         let command = env::var("BACKEND_CMD").unwrap_or_else(|_| "python3".to_string());
-        let args: Vec<String> = env::var("BACKEND_ARGS")
-            .unwrap_or_else(|_| {
-                format!(
-                    "-m uvicorn api:app --host 0.0.0.0 --port {}",
-                    default_port
-                )
-            })
-            .split_whitespace()
-            .map(String::from)
-            .collect();
+        let args_raw = env::var("BACKEND_ARGS").unwrap_or_else(|_| {
+            format!(
+                "-m uvicorn api:app --host 0.0.0.0 --port {}",
+                default_port
+            )
+        });
+        // Preserve full command string for shells so `-lc "<cmd>"` is passed as one argument.
+        let args: Vec<String> = if command.ends_with("bash") || command.ends_with("sh") {
+            let trimmed = args_raw.trim_start();
+            if let Some(rest) = trimmed.strip_prefix("-lc").map(str::trim_start) {
+                vec!["-lc".to_string(), rest.to_string()]
+            } else {
+                vec!["-lc".to_string(), trimmed.to_string()]
+            }
+        } else {
+            args_raw.split_whitespace().map(String::from).collect()
+        };
         let workdir = env::var("BACKEND_WORKDIR").unwrap_or_else(|_| "/app/backend".to_string());
         let port: u16 = env::var("BACKEND_PORT")
             .ok()
@@ -61,6 +68,8 @@ pub async fn spawn_backend(cfg: &BackendConfig) -> Result<Child, String> {
     );
 
     let child = Command::new(&cfg.command)
+        .env("PORT", cfg.port.to_string())
+        .env("API_PORT", cfg.port.to_string())
         .args(&cfg.args)
         .current_dir(&cfg.workdir)
         .stdout(Stdio::inherit())

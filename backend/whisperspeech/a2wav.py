@@ -7,7 +7,7 @@ __all__ = ['Vocoder']
 from vocos import Vocos
 from whisperspeech import inference
 import torch
-import torchaudio
+import soundfile as sf
 
 # %% ../nbs/6. Quality-boosting vocoder.ipynb 2
 class Vocoder:
@@ -39,8 +39,9 @@ class Vocoder:
         return self.vocos.decode(features, bandwidth_id=bandwidth_id)
         
     def decode_to_file(self, fname, atoks):
-        audio = self.decode(atoks)
-        torchaudio.save(fname, audio.cpu(), 24000)
+        audio = self.decode(atoks).cpu()
+        # soundfile expects shape (samples, channels)
+        sf.write(fname, audio.transpose(0, 1).numpy(), 24000)
         if self.is_notebook():
             from IPython.display import display, HTML, Audio
             display(HTML(f'<a href="{fname}" target="_blank">Listen to {fname}</a>'))

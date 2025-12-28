@@ -79,5 +79,5 @@ def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
 if __name__ == "__main__":
     if not torch.cuda.is_available():
         print("WARNING: No GPU detected, TTS will be slow")
-    port = int(os.getenv("PORT", "7101"))
+    port = int(os.getenv("PORT", os.getenv("API_PORT", "7097")))
     uvicorn.run("api:app", host="0.0.0.0", port=port, reload=False)
