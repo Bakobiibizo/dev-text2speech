@@ -66,6 +66,12 @@ docker compose config
 
 The tests use a synthetic WAV-producing backend and never download model weights. Real synthesis is an explicit deployment smoke test because the model is large and accelerator-specific.
 
+Python deployments are resolved from `backend/pyproject.toml` and the committed
+`backend/uv.lock`. Refresh the lock with `uv lock --upgrade` and validate it with
+`uv run --frozen pytest`; the unpinned `requirements.txt` remains only for the
+legacy upstream WhisperSpeech image. Production image builds should use the
+locked environment so dependency upgrades are reviewable and reproducible.
+
 ## Architecture notes
 
 - CPU container: Debian/Python multi-architecture image for ARM64 and x86_64.

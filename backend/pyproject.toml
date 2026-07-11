@@ -1,0 +1,32 @@
+[project]
+name = "dev-text2speech-backend"
+version = "0.2.0"
+description = "WhisperSpeech inference backend for dev-text2speech"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi>=0.116.1",
+  "fastcore>=1.8.5",
+  "fastprogress>=1.0.3",
+  "huggingface-hub>=0.33.0",
+  "loguru>=0.7.3",
+  "numpy>=2.1.0",
+  "python-dotenv>=1.1.1",
+  "requests>=2.32.4",
+  "setuptools>=78.1.1",
+  "soundfile>=0.13.1",
+  "torch>=2.7.1",
+  "torchaudio>=2.7.1",
+  "transformers>=4.53.0",
+  "uvicorn>=0.35.0",
+  "vocos>=0.1.0",
+  "webdataset>=0.2.111",
+]
+
+[dependency-groups]
+dev = ["httpx>=0.28.1", "pytest>=8.4.1", "ruff>=0.12.0"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
