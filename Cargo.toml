@@ -1,7 +1,13 @@
 [package]
 name = "dev-text2speech"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+rust-version = "1.83"
+description = "A bounded WhisperSpeech HTTP service and command-line client"
+license = "MIT"
+repository = "https://github.com/Bakobiibizo/dev-text2speech"
+keywords = ["tts", "speech", "whisperspeech", "inference"]
+categories = ["multimedia::audio", "command-line-utilities", "web-programming::http-server"]
 
 [dependencies]
 tokio = { version = "1.43", features = ["full"] }
@@ -12,9 +18,13 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenv = "0.15"
 reqwest = { version = "0.12", features = ["json"] }
-tower-http = { version = "0.5", features = ["cors"] }
+tower-http = { version = "0.5", features = ["limit", "trace"] }
 tower = { version = "0.4", features = ["util"] }
 thiserror = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
 
 [[bin]]
 name = "dev-text2speech"

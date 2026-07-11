@@ -1,155 +1,63 @@
+use clap::{Parser, Subcommand};
+use dev_text2speech::{app, backend, config::Config, TtsRequest};
 use std::net::SocketAddr;
-use std::sync::Arc;
-
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
-    Json, Router,
-};
-use reqwest::Client;
 use tokio::net::TcpListener;
-use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
-use tower_http::cors::CorsLayer;
-use tracing::{error, info};
 
-mod backend;
-mod config;
-
-#[derive(Clone)]
-struct AppState {
-    config: Arc<config::Config>,
-    client: Client,
-    ready: Arc<RwLock<bool>>,
+#[derive(Parser)]
+#[command(version, about = "Bounded WhisperSpeech API and client")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
 }
-
-#[derive(Deserialize)]
-struct TtsRequest {
-    text: String,
-    #[serde(default)]
-    voice: Option<String>,
-}
-
-#[derive(Serialize)]
-struct ReadyStatus {
-    ready: bool,
-}
-
-async fn health() -> &'static str {
-    "ok"
-}
-
-async fn ready(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let ready = *state.ready.read().await;
-    (StatusCode::OK, Json(ReadyStatus { ready }))
-}
-
-async fn warm(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    match call_backend_health(&state).await {
-        Ok(_) => {
-            *state.ready.write().await = true;
-            (StatusCode::OK, "warmed")
-        }
-        Err(err) => {
-            error!("warm failed: {}", err);
-            (StatusCode::BAD_GATEWAY, "warm failed")
-        }
-    }
-}
-
-async fn synthesize(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<TtsRequest>,
-) -> impl IntoResponse {
-    let url = format!("{}/synthesize", state.config.backend_url);
-    let payload = serde_json::json!({
-        "text": req.text,
-        "voice": req.voice,
-    });
-    match state.client.post(&url).json(&payload).send().await {
-        Ok(resp) => {
-            let status = resp.status();
-            match resp.bytes().await {
-                Ok(bytes) => (status, bytes),
-                Err(err) => {
-                    error!("backend read error: {}", err);
-                    (StatusCode::BAD_GATEWAY, "backend read error".into())
-                }
-            }
-        }
-        Err(err) => {
-            error!("backend error: {}", err);
-            (StatusCode::BAD_GATEWAY, "backend error".into())
-        }
-    }
+#[derive(Subcommand)]
+enum Command {
+    Serve,
+    Synthesize {
+        text: String,
+        #[arg(long)]
+        voice: Option<String>,
+        #[arg(long, default_value = "speech.wav")]
+        output: String,
+        #[arg(long, default_value = "http://127.0.0.1:7101")]
+        url: String,
+    },
 }
 
 #[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt::init();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
     dotenv::dotenv().ok();
-
-    let cfg = Arc::new(config::Config::load());
-    let client = Client::new();
-
-    // Ensure backend subprocess is running
-    if let Err(e) = backend::ensure_backend_running(&cfg.backend, &client).await {
-        error!("failed to start backend: {}", e);
-    }
-
-    let state = Arc::new(AppState {
-        config: cfg.clone(),
-        client: client.clone(),
-        ready: Arc::new(RwLock::new(false)),
-    });
-
-    // Start health-check loop for backend subprocess
-    let health_cfg = cfg.backend.clone();
-    let health_client = client.clone();
-    tokio::spawn(async move {
-        backend::health_check_loop(health_cfg, health_client).await;
-    });
-
-    let preload_state = state.clone();
-    tokio::spawn(async move {
-        if preload_state.config.preload {
-            // Wait a bit for container to be ready
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            if call_backend_health(&preload_state).await.is_ok() {
-                *preload_state.ready.write().await = true;
-                info!("backend warmed");
-            }
-        } else {
-            *preload_state.ready.write().await = true;
+    match Cli::parse().command.unwrap_or(Command::Serve) {
+        Command::Serve => {
+            let cfg = Config::load()?;
+            let _child = if std::env::var("MANAGE_BACKEND").as_deref() == Ok("true") {
+                backend::ensure_backend_running(&cfg.backend, &reqwest::Client::new()).await?
+            } else {
+                None
+            };
+            let addr: SocketAddr = format!("{}:{}", cfg.api_host, cfg.api_port).parse()?;
+            tracing::info!(%addr, backend=%cfg.backend_url, "starting service");
+            axum::serve(TcpListener::bind(addr).await?, app(cfg)).await?;
         }
-    });
-
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/ready", get(ready))
-        .route("/warm", post(warm))
-        .route("/synthesize", post(synthesize))
-        .layer(CorsLayer::permissive())
-        .with_state(state.clone());
-
-    let addr: SocketAddr = format!("{}:{}", state.config.api_host, state.config.api_port)
-        .parse()
-        .unwrap_or_else(|e| {
-            error!("Invalid bind address: {}", e);
-            SocketAddr::from(([0, 0, 0, 0], 7101))
-        });
-    info!("listening on {}, proxying to {}", addr, state.config.backend_url);
-    let listener = TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
-}
-
-async fn call_backend_health(state: &AppState) -> Result<(), String> {
-    let url = format!("{}/health", state.config.backend_url);
-    match state.client.get(url).send().await {
-        Ok(resp) if resp.status().is_success() => Ok(()),
-        Ok(_) => Err("backend unhealthy".to_string()),
-        Err(e) => Err(e.to_string()),
+        Command::Synthesize {
+            text,
+            voice,
+            output,
+            url,
+        } => {
+            let client = reqwest::Client::new();
+            let mut request = client
+                .post(format!("{}/v1/audio/speech", url.trim_end_matches('/')))
+                .json(&TtsRequest { text, voice });
+            if let Ok(key) = std::env::var("API_KEY") {
+                request = request.bearer_auth(key);
+            }
+            let response = request.send().await?.error_for_status()?;
+            tokio::fs::write(&output, response.bytes().await?).await?;
+            println!("wrote {output}");
+        }
     }
+    Ok(())
 }

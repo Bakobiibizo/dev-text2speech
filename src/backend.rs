@@ -26,10 +26,7 @@ impl BackendConfig {
         use std::env;
         let command = env::var("BACKEND_CMD").unwrap_or_else(|_| "python3".to_string());
         let args_raw = env::var("BACKEND_ARGS").unwrap_or_else(|_| {
-            format!(
-                "-m uvicorn api:app --host 0.0.0.0 --port {}",
-                default_port
-            )
+            format!("-m uvicorn api:app --host 0.0.0.0 --port {}", default_port)
         });
         // Preserve full command string for shells so `-lc "<cmd>"` is passed as one argument.
         let args: Vec<String> = if command.ends_with("bash") || command.ends_with("sh") {
@@ -77,7 +74,10 @@ pub async fn spawn_backend(cfg: &BackendConfig) -> Result<Child, String> {
         .spawn()
         .map_err(|e| format!("failed to spawn backend: {}", e))?;
 
-    info!("backend subprocess started with pid {}", child.id().unwrap_or(0));
+    info!(
+        "backend subprocess started with pid {}",
+        child.id().unwrap_or(0)
+    );
     Ok(child)
 }
 
@@ -100,7 +100,10 @@ pub async fn health_check_loop(cfg: BackendConfig, client: reqwest::Client) {
             consecutive_failures = 0;
         } else {
             consecutive_failures += 1;
-            warn!(failures = consecutive_failures, "backend health check failed");
+            warn!(
+                failures = consecutive_failures,
+                "backend health check failed"
+            );
 
             if consecutive_failures >= 3 {
                 warn!("restarting backend subprocess after repeated failures");
@@ -123,9 +126,12 @@ pub async fn health_check_loop(cfg: BackendConfig, client: reqwest::Client) {
 }
 
 /// Ensure backend is running, spawn if needed.
-pub async fn ensure_backend_running(cfg: &BackendConfig, client: &reqwest::Client) -> Result<Option<Child>, String> {
+pub async fn ensure_backend_running(
+    cfg: &BackendConfig,
+    client: &reqwest::Client,
+) -> Result<Option<Child>, String> {
     let health_url = format!("http://localhost:{}{}", cfg.port, cfg.health_path);
-    
+
     // Check if already running
     if let Ok(resp) = client.get(&health_url).send().await {
         if resp.status().is_success() {
@@ -136,9 +142,9 @@ pub async fn ensure_backend_running(cfg: &BackendConfig, client: &reqwest::Clien
 
     // Spawn backend
     let child = spawn_backend(cfg).await?;
-    
+
     // Wait a bit for it to start
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    
+
     Ok(Some(child))
 }

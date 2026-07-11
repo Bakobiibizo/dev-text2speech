@@ -1,48 +1,24 @@
-# Text2Speech Proxy + Backend
-# Bundles the Rust proxy with the WhisperSpeech Python backend
-
 FROM rust:1.83-bookworm AS builder
-
 WORKDIR /build
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN cargo build --release
+RUN cargo build --locked --release
 
-# Runtime image with CUDA support
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    python3 \
-    python3-pip \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
+# Multi-architecture CPU image. Use docker/Dockerfile.cuda for NVIDIA hosts.
+FROM python:3.11-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libsndfile1 && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 10001 app
 WORKDIR /app
-
-# Copy Rust binary
-COPY --from=builder /build/target/release/dev-text2speech /app/proxy
-
-# Copy backend code
-COPY backend/ /app/backend/
-
-# Install Python dependencies
-RUN python3 -m pip install --no-cache-dir \
-    fastapi uvicorn pydantic torch torchaudio whisperspeech webdataset fastcore fastprogress
-
-RUN python3 -m pip install --no-cache-dir vocos encodec --no-deps
-# Environment defaults
-# Proxy listens on 7101, backend on internal port 8101
-ENV API_HOST=0.0.0.0
-ENV API_PORT=7101
-ENV BACKEND_URL=http://localhost:8101
-ENV BACKEND_CMD=python3
-ENV BACKEND_ARGS="-m uvicorn api:app --host 0.0.0.0 --port 8101"
-ENV BACKEND_WORKDIR=/app/backend
-ENV BACKEND_PORT=8101
-ENV BACKEND_HEALTH_PATH=/health
-ENV PRELOAD=true
-
+COPY --from=builder /build/target/release/dev-text2speech /usr/local/bin/dev-text2speech
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+COPY backend /app/backend
+RUN mkdir -p /models /cache && chown -R app:app /app /models /cache
+USER app
+ENV API_HOST=0.0.0.0 API_PORT=7101 BACKEND_PORT=8101 BACKEND_URL=http://127.0.0.1:8101 \
+    BACKEND_CMD=python3 BACKEND_ARGS="-m uvicorn api:app --host 127.0.0.1 --port 8101" \
+    BACKEND_WORKDIR=/app/backend MANAGE_BACKEND=true HF_HOME=/cache/huggingface TORCH_HOME=/cache/torch
+VOLUME ["/cache", "/models"]
 EXPOSE 7101
-
-CMD ["/app/proxy"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7101/health')"
+CMD ["dev-text2speech", "serve"]

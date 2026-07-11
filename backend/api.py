@@ -4,29 +4,17 @@ Exposes /synthesize endpoint for the Rust proxy.
 Uses WhisperSpeech for TTS generation.
 """
 
-import base64
 import os
 import tempfile
 from pathlib import Path
 
-import torch
 import uvicorn
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from whisperspeech.pipeline import Pipeline
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Load model on startup
 MODEL_REF = os.getenv("TTS_MODEL", "collabora/whisperspeech:s2a-q4-tiny-en+pl.model")
 pipe = None
 
@@ -34,21 +22,27 @@ pipe = None
 def get_pipeline():
     global pipe
     if pipe is None:
+        # Import lazily: liveness and packaging checks must not download models.
+        from whisperspeech.pipeline import Pipeline
         pipe = Pipeline(s2a_ref=MODEL_REF)
     return pipe
 
 
 class SynthesizeRequest(BaseModel):
-    text: str
-
-
-class SynthesizeResponse(BaseModel):
-    audio: str  # base64 encoded WAV
+    text: str = Field(min_length=1, max_length=int(os.getenv("MAX_TEXT_CHARS", "5000")))
+    voice: str | None = None
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    if pipe is None:
+        raise HTTPException(status_code=503, detail="model is not loaded")
+    return {"status": "ready", "model": MODEL_REF}
 
 
 @app.post("/warm")
@@ -59,7 +53,7 @@ def warm():
 
 
 @app.post("/synthesize")
-def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
+def synthesize(request: SynthesizeRequest) -> Response:
     """Generate speech from text."""
     pipeline = get_pipeline()
     
@@ -69,14 +63,14 @@ def synthesize(request: SynthesizeRequest) -> SynthesizeResponse:
     try:
         pipeline.generate_to_file(str(output_path), request.text)
         audio_bytes = output_path.read_bytes()
-        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-        return SynthesizeResponse(audio=audio_b64)
+        return Response(content=audio_bytes, media_type="audio/wav")
     finally:
         if output_path.exists():
             output_path.unlink()
 
 
 if __name__ == "__main__":
+    import torch
     if not torch.cuda.is_available():
         print("WARNING: No GPU detected, TTS will be slow")
     port = int(os.getenv("PORT", os.getenv("API_PORT", "7097")))
